@@ -34,11 +34,11 @@ tuple CFC {
 }
 {CFC} cfc = ...;
 
-tuple PATH {
-	int start;
-	int end;
-}
-{PATH} path = { <s, e> | s, e in allnode : Bandwidth[s][e] > 0 };
+//tuple PATH {
+//	int start;
+//	int end;
+//}
+//{PATH} path = { <s, e> | s, e in allnode : Bandwidth[s][e] > 0 };
 
 
 //float resource_impact[Feature_Model][Feature_Model][resource] = ...;
@@ -50,8 +50,8 @@ dvar int used[nfnode] in 0..1;
 //dvar int req[cfc][phy_feature] in 0..1;
 dvar int allocate[cfc][phy_feature][allnode] in 0..1;
 dvar int instance_count[cnode][VNF];
-dvar int flow[cfc][phy_feature][phy_feature][path] in 0..1;
-//dvar int n_choice[cfc][allnode][phy_feature][phy_feature] in 0..1;
+//dvar int flow[cfc][phy_feature][phy_feature][path] in 0..1;
+dvar int n_choice[cfc][allnode][phy_feature][phy_feature] in 0..1;
 
 constraint feature;
 constraint type2;
@@ -64,15 +64,15 @@ constraint alloc;
 constraint node_use;
 constraint demand_of_rps;
 constraint demand_of_resource;
-//constraint nodechoice;
-constraint pathchoice;
+constraint nodechoice;
+//constraint pathchoice;
 constraint network;
 
 
 minimize 
     sum( i in cfc, j in Feature_Model ) (1 - f_choice[i][j]) * feature_failure_cost[i.type][j] +    // CF
     sum( n in nfnode ) used[n] * node_using_cost[n] +    // CR
-    sum( l in path, c in cfc, p in phy_feature, q in phy_feature ) flow[c][p][q][l] * update_msg_cost;    // CU
+    sum( n in allnode, c in cfc, p in phy_feature, q in phy_feature ) n_choice[c][n][p][q] * update_msg_cost;    // CU
 
 subject to {
 	feature = forall( i in cfc ) {
@@ -81,16 +81,16 @@ subject to {
 	}
 	type2 = forall( i in cfc : i.type == 2 ) {
 		f_choice[i]["f2"] == 0;
-		f_choice[i]["f4"] == 0;
+//		f_choice[i]["f4"] == 0;
 	}
 	type3 = forall( i in cfc : i.type == 3 ) {
 		f_choice[i]["f2"] == 0;
-		f_choice[i]["f3"] == 0;
-		f_choice[i]["f6"] == 0;
+//		f_choice[i]["f3"] == 0;
+//		f_choice[i]["f6"] == 0;
 	}
 	type4 = forall( i in cfc : i.type == 4 ) {
 		f_choice[i]["f2"] == 0;
-		f_choice[i]["f3"] == 0;
+//		f_choice[i]["f3"] == 0;
 	}
 	type5 = forall( i in cfc : i.type == 5 ) {
 		f_choice[i]["f2"] == 0;
@@ -120,28 +120,30 @@ subject to {
 	demand_of_resource = forall( i in cnode, re in resource ) {
 		cnode_Capacity[i][re] >= sum( v in VNF ) resource_demand[v][re] * instance_count[i][v];
 	}
-//	nodechoice = 
-//		forall( n in allnode, c in cfc, im in impact_feature, p in phy_feature, q in phy_feature : 
-//				f_net_influence[im][p][q] == 1 ) {
-//			n_choice[c][n][p][q] >= allocate[c][p][n] * f_choice[c][im];
-//	}
+	nodechoice = 
+		forall( n in allnode, c in cfc, im in impact_feature, p in phy_feature, q in phy_feature : 
+				f_net_influence[im][p][q] == 1 ) {
+			n_choice[c][n][p][q] >= allocate[c][p][n] * f_choice[c][im];
+	}
 //	network = 
 //		forall( n in allnode, c in cfc, p in phy_feature, q in phy_feature, im in impact_feature : f_net_influence[im][p][q] > 0) {
 //			sum( m in allnode : Bandwidth[m][n] > 0 ) n_choice[c][m][p][q] == 
 //			f_choice[c][im] * (1 - allocate[c][p][n] - allocate[c][q][n] + n_choice[c][n][p][q]);
 //	}
-	pathchoice = 
-		forall( c in cfc, p in phy_feature, q in phy_feature, im in impact_feature ) {
-			sum( l in path ) flow[c][p][q][l] >= ( f_net_influence[im][p][q] > 0? 1: 0 ) * f_choice[c][im];
- 		}			
- 		forall( c in cfc, p in phy_feature, q in phy_feature ) {
-			sum( l in path ) flow[c][p][q][l] <= 
-			sum( im in impact_feature ) ( f_net_influence[im][p][q] > 0? 1: 0 ) * f_choice[c][im] * hoplimit;
-		}
-	network = 
-		forall( c in cfc, p in phy_feature, q in phy_feature, n in allnode, m in allnode : Bandwidth[m][n] > 0 ) {
-			
-		}
+//	pathchoice = {
+//		forall( c in cfc, p in phy_feature, q in phy_feature, im in impact_feature ) {
+//			sum( l in path ) flow[c][p][q][l] >= ( f_net_influence[im][p][q] > 0? 1: 0 ) * f_choice[c][im];
+// 		}			
+// 		forall( c in cfc, p in phy_feature, q in phy_feature ) {
+//			sum( l in path ) flow[c][p][q][l] <= 
+//			sum( im in impact_feature ) ( f_net_influence[im][p][q] > 0? 1: 0 ) * f_choice[c][im] * hoplimit;
+//		}	
+//	}	
+//	network = {
+//		forall( c in cfc, p in phy_feature, q in phy_feature, n in allnode ) {
+//			sum( m in allnode : Bandwidth[m][n] > 0 ) flow[c][p][q][<n, m>] == 2 - allocate[c][p][n] - allocate[c][q][n];
+//		}
+//	}
 }
   
 
