@@ -1,6 +1,6 @@
 range allnode = 1..45;
 range nfnode = 41..45;
-range commomnode = 1..40;
+range commonnode = 1..40;
 range cnode = 42..45;
 range pnode = 41..41;
 range chain_type = 1..5;
@@ -24,7 +24,7 @@ float Bandwidth[allnode][allnode] = ...;
 float cnode_Capacity[cnode][resource] = ...;
 float pnode_Capacity[pnode] = ...;
 float node_using_cost[nfnode] = ...;
-float resource_using_cost[nfnode][resource] = ...;
+//float resource_using_cost[nfnode][resource] = ...;
 float feature_failure_cost[chain_type][Feature_Model] = ...;
 float resource_demand[vnf_feature][resource] = ...;
 float rps[vnf_feature] = ...;
@@ -36,8 +36,8 @@ int hoplimit = 18;
 //h_s = 10000;
 //s_r = 10000;
 //s_e = 10000;
-int r_r = 20000;
-int n_r = 40000;
+int r_r = 8000;
+int n_r = 16000;
 
 tuple CFC {
 	int src;
@@ -169,15 +169,20 @@ subject to {
 		}
 		forall( c in cfc, p, q in phy_feature, n in allnode ) {
 			(sum( m in allnode : Bandwidth[m][n] > 0 ) flow[c][p][q][<m, n>]) + allocate[c][p][n] <= 
-			(sum( l in allnode : Bandwidth[n][l] > 0 ) flow[c][p][q][<n, l>]) + allocate[c][q][n] + 
+			(sum( k in allnode : Bandwidth[n][k] > 0 ) flow[c][p][q][<n, k>]) + allocate[c][q][n] + 
 			(1 - flow_active[c][p][q]);
-			(sum( l in allnode : Bandwidth[n][l] > 0 ) flow[c][p][q][<n, l>]) + allocate[c][q][n] <= 
+			(sum( k in allnode : Bandwidth[n][k] > 0 ) flow[c][p][q][<n, k>]) + allocate[c][q][n] <= 
 			(sum( m in allnode : Bandwidth[m][n] > 0 ) flow[c][p][q][<m, n>]) + allocate[c][p][n] + 
 			(1 - flow_active[c][p][q]);
 		}
 	}
-	demand_of_network = forall( m, n in allnode : Bandwidth[m][n] > 0 ) {
-		sum( c in cfc, p, q in phy_feature ) flow[c][p][q][<m, n>] * prop[p] <= Bandwidth[m][n];
+	demand_of_network = {
+		forall( <m, n> in path : m in cnode || n in cnode ) {
+			sum( c in cfc, p, q in phy_feature ) flow[c][p][q][<m, n>] * prop[p] * c.demand <= n_r;
+		}
+		forall( <m, n> in path : m in commonnode && n in commonnode ) {
+			sum( c in cfc, p, q in phy_feature ) flow[c][p][q][<m, n>] * prop[p] * c.demand <= r_r;
+		}
 	}
 //	network = {
 //		forall( c in cfc, p in phy_feature, q in phy_feature, n in allnode ) {
@@ -189,24 +194,24 @@ subject to {
 //	}				
 }	
 
-execute {
-	for(var m in nfnode) {
-		for(var n in commomnode) {
-			if(Bandwidth[m][n] > 0) {
-				Bandwidth[m][n] = n_r;	
-				Bandwidth[n][m] = n_r;
-			}	
-		}		
-	}
-	for(var m in commomnode) {
-		for(var n in commomnode) {
-			if(Bandwidth[m][n] > 0) {
-				Bandwidth[m][n] = r_r;	
-			}		
-		}		
-	}	
-}
+//execute {
+//	for(var m in nfnode) {
+//		for(var n in commomnode) {
+//			if(Bandwidth[m][n] > 0) {
+//				Bandwidth[m][n] = n_r;	
+//				Bandwidth[n][m] = n_r;
+//			}	
+//		}		
+//	}
+//	for(var m in commomnode) {
+//		for(var n in commomnode) {
+//			if(Bandwidth[m][n] > 0) {
+//				Bandwidth[m][n] = r_r;	
+//			}		
+//		}		
+//	}	
+//}
 
-execute PARAMS { cplex.tilim = 1000; }
+//execute PARAMS { cplex.tilim = 100; }
 
 
