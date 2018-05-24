@@ -20,7 +20,6 @@ float init_cost = 0.4;
 //float Conectivity[allnode][allnode] = ...;
 float Bandwidth[allnode][allnode] = ...;
 
-
 float cnode_Capacity[cnode][resource] = ...;
 float pnode_Capacity[pnode] = ...;
 float node_using_cost[nfnode] = ...;
@@ -46,6 +45,7 @@ tuple CFC {
 	float demand;
 }
 {CFC} cfc = ...;
+{CFC} former_cfc = ...;
 
 tuple PATH {
 	int start;
@@ -53,17 +53,30 @@ tuple PATH {
 }
 {PATH} path = { <s, e> | s, e in allnode : Bandwidth[s][e] > 0 };    // 因为双向, 所以不能硬性规定 s 与 e 的大小关系
 
+tuple REQ {
+	int src;
+	int sink;
+	int type;
+	float demand;
+	string r1;
+	string r2;
+}
+{REQ} req = { <c.src, c.sink, c.type, c.demand, p, q> | c in cfc, p, q in phy_feature };
+{REQ} former_req = { <c.src, c.sink, c.type, c.demand, p, q> | c in former_cfc, p, q in phy_feature };
+
+int former_flow[former_req][path] = ...;
 
 dvar int f_choice[cfc][Feature_Model] in 0..1;
 dvar int used[nfnode] in 0..1;
 //dvar int req[cfc][phy_feature] in 0..1;
 dvar int allocate[cfc][phy_feature][allnode] in 0..1;
 dvar int instance_count[cnode][vnf_feature] in 0..maxint;
-dvar int flow[cfc][phy_feature][phy_feature][path] in 0..1;
+dvar int flow[req][path] in 0..1;
 dvar int flow_active[cfc][phy_feature][phy_feature] in 0..1;
 //dvar int n_choice[cfc][allnode][phy_feature][phy_feature] in 0..1;
 //dvar float rs_demand[cfc][nf_feature] in 0..infinity;
 //dvar float net_demand[cfc][phy_feature][phy_feature] in 0..infinity;
+dvar int flow_update[req][path] in 0..1;
 
 constraint feature;
 constraint type2;
@@ -81,12 +94,13 @@ constraint demand_of_resource;
 constraint pathchoice;
 constraint network;
 constraint demand_of_network;
+constraint update;
 
 minimize 
     sum( c in cfc, j in Feature_Model ) (1 - f_choice[c][j]) * feature_failure_cost[c.type][j] +    // CF
     sum( n in nfnode ) used[n] * node_using_cost[n] + 
     sum( i in cnode, v in vnf_feature ) instance_count[i][v] * init_cost +    // CR
-    sum( l in path, c in cfc, p, q in phy_feature ) flow[c][p][q][l] * update_msg_cost;    // CU
+    sum( l in path, r in req ) flow[r][l] * update_msg_cost;    // CU
 
 subject to {
 	feature = forall( i in cfc ) {
@@ -156,10 +170,10 @@ subject to {
 //	}
 	pathchoice = {
 		forall( c in cfc, p, q in phy_feature, im in impact_feature ) {
-			sum( l in path ) flow[c][p][q][l] >= ( f_net_influence[im][p][q] > 0? 1: 0 ) * f_choice[c][im];
+			sum( l in path ) flow[<c.src, c.sink, c.type, c.demand, p, q>][l] >= ( f_net_influence[im][p][q] > 0? 1: 0 ) * f_choice[c][im];
  		}			
  		forall( c in cfc, p, q in phy_feature ) {
-			sum( l in path ) flow[c][p][q][l] <= 
+			sum( l in path ) flow[<c.src, c.sink, c.type, c.demand, p, q>][l] <= 
 			sum( im in impact_feature ) ( f_net_influence[im][p][q] > 0? 1: 0 ) * f_choice[c][im] * hoplimit;
 		}	
 	}		
@@ -168,20 +182,20 @@ subject to {
 			flow_active[c][p][q] >= f_choice[c][im];		
 		}
 		forall( c in cfc, p, q in phy_feature, n in allnode ) {
-			(sum( m in allnode : Bandwidth[m][n] > 0 ) flow[c][p][q][<m, n>]) + allocate[c][p][n] <= 
-			(sum( k in allnode : Bandwidth[n][k] > 0 ) flow[c][p][q][<n, k>]) + allocate[c][q][n] + 
+			(sum( m in allnode : Bandwidth[m][n] > 0 ) flow[<c.src, c.sink, c.type, c.demand, p, q>][<m, n>]) + allocate[c][p][n] <= 
+			(sum( k in allnode : Bandwidth[n][k] > 0 ) flow[<c.src, c.sink, c.type, c.demand, p, q>][<n, k>]) + allocate[c][q][n] + 
 			(1 - flow_active[c][p][q]);
-			(sum( k in allnode : Bandwidth[n][k] > 0 ) flow[c][p][q][<n, k>]) + allocate[c][q][n] <= 
-			(sum( m in allnode : Bandwidth[m][n] > 0 ) flow[c][p][q][<m, n>]) + allocate[c][p][n] + 
+			(sum( k in allnode : Bandwidth[n][k] > 0 ) flow[<c.src, c.sink, c.type, c.demand, p, q>][<n, k>]) + allocate[c][q][n] <= 
+			(sum( m in allnode : Bandwidth[m][n] > 0 ) flow[<c.src, c.sink, c.type, c.demand, p, q>][<m, n>]) + allocate[c][p][n] + 
 			(1 - flow_active[c][p][q]);
 		}
 	}
 	demand_of_network = {
 		forall( <m, n> in path : m in cnode || n in cnode ) {
-			sum( c in cfc, p, q in phy_feature ) flow[c][p][q][<m, n>] * prop[p] * c.demand <= n_r;
+			sum( c in cfc, p, q in phy_feature ) flow[<c.src, c.sink, c.type, c.demand, p, q>][<m, n>] * prop[p] * c.demand <= n_r;
 		}
 		forall( <m, n> in path : m in commonnode && n in commonnode ) {
-			sum( c in cfc, p, q in phy_feature ) flow[c][p][q][<m, n>] * prop[p] * c.demand <= r_r;
+			sum( c in cfc, p, q in phy_feature ) flow[<c.src, c.sink, c.type, c.demand, p, q>][<m, n>] * prop[p] * c.demand <= r_r;
 		}
 	}
 //	network = {
@@ -191,7 +205,15 @@ subject to {
 //			(sum( l in allnode : Bandwidth[n][l] > 0 ) flow[c][p][q][<n, l>]) + allocate[c][q][n] + 
 //				(1 - sum( im in impact_feature ) f_choice[c][im] * f_net_influence[im][p][q]);
 //		}
-//	}				
+//	}		
+	update = {
+		forall( r in former_req, l in path ) {
+			flow_update[r][l] == flow[r][l] * (1 - former_flow[r][l]);
+		}
+		forall( r in req, l in path : <r.src, r.sink, r.type, r.demand> not in former_cfc ) {
+			flow_update[r][l] == flow[r][l];
+		}
+	}	
 }	
 
 //execute {
