@@ -5,7 +5,7 @@ range cnode = 42..45;
 range pnode = 41..41;
 range chain_type = 1..5;
 
-float multiplier = 5;
+float multiplier = 1;
 float update_msg_cost = 0.2;
 float init_cost = 0.4;
 
@@ -35,8 +35,8 @@ int hoplimit = 18;
 //h_s = 10000;
 //s_r = 10000;
 //s_e = 10000;
-int r_r = 8000;
-int n_r = 16000;
+float r_r = 8000;
+float n_r = 16000;
 
 tuple CFC {
 	int src;
@@ -44,8 +44,9 @@ tuple CFC {
 	int type;
 	float demand;
 }
-{CFC} cfc = ...;
+{CFC} new_cfc = ...;
 {CFC} former_cfc = ...;
+{CFC} cfc = new_cfc union former_cfc;    // È¡²¢¼¯
 
 tuple PATH {
 	int start;
@@ -78,6 +79,11 @@ dvar int flow_active[cfc][phy_feature][phy_feature] in 0..1;
 //dvar float net_demand[cfc][phy_feature][phy_feature] in 0..infinity;
 dvar int flow_update[req][path] in 0..1;
 
+dvar float CR;
+dvar float CI;
+dvar float CF;
+dvar float CU;
+
 constraint feature;
 constraint type2;
 constraint type3;
@@ -96,11 +102,9 @@ constraint network;
 constraint demand_of_network;
 constraint update;
 
-minimize 
-    sum( c in cfc, j in Feature_Model ) (1 - f_choice[c][j]) * feature_failure_cost[c.type][j] +    // CF
-    sum( n in nfnode ) used[n] * node_using_cost[n] + 
-    sum( i in cnode, v in vnf_feature ) instance_count[i][v] * init_cost +    // CR
-    sum( l in path, r in req ) flow[r][l] * update_msg_cost;    // CU
+constraint cost;
+
+minimize CF + CR + CU;
 
 subject to {
 	feature = forall( i in cfc ) {
@@ -148,11 +152,11 @@ subject to {
 	}
 	demand_of_rps = {	
 		forall( i in cnode, v in vnf_feature ) {
-			instance_count[i][v] * rps[v] >= sum( c in cfc ) allocate[c][v][i] * prop[v] * c.demand * multiplier;
+			instance_count[i][v] * rps[v] >= sum( c in cfc ) allocate[c][v][i] * c.demand * multiplier;
 //			(instance_count[i][v] - 1) * rps[v] <= sum( c in cfc ) allocate[c][v][i] * prop[v] * c.demand * multiplier;
 		}
 		forall( i in pnode ) {
-			pnode_Capacity[i] >= sum( c in cfc, p in pnf_feature ) allocate[c][p][i] * prop[p] * c.demand * multiplier;
+			pnode_Capacity[i] >= sum( c in cfc, p in pnf_feature ) allocate[c][p][i] * c.demand * multiplier;
 		}
 	}
 	demand_of_resource = forall( i in cnode, re in resource ) {
@@ -188,6 +192,8 @@ subject to {
 			(sum( k in allnode : Bandwidth[n][k] > 0 ) flow[<c.src, c.sink, c.type, c.demand, p, q>][<n, k>]) + allocate[c][q][n] <= 
 			(sum( m in allnode : Bandwidth[m][n] > 0 ) flow[<c.src, c.sink, c.type, c.demand, p, q>][<m, n>]) + allocate[c][p][n] + 
 			(1 - flow_active[c][p][q]);
+			(sum( m in allnode : Bandwidth[m][n] > 0 ) flow[<c.src, c.sink, c.type, c.demand, p, q>][<m, n>]) + allocate[c][p][n] <= 1;
+			(sum( k in allnode : Bandwidth[n][k] > 0 ) flow[<c.src, c.sink, c.type, c.demand, p, q>][<n, k>]) + allocate[c][q][n] <= 1;
 		}
 	}
 	demand_of_network = {
@@ -210,10 +216,16 @@ subject to {
 		forall( r in former_req, l in path ) {
 			flow_update[r][l] == flow[r][l] * (1 - former_flow[r][l]);
 		}
-		forall( r in req, l in path : <r.src, r.sink, r.type, r.demand> not in former_cfc ) {
+		forall( r in req, l in path : <r.src, r.sink, r.type, r.demand> in new_cfc ) {
 			flow_update[r][l] == flow[r][l];
 		}
 	}	
+	cost = {
+		CF == sum( c in cfc, j in Feature_Model ) (1 - f_choice[c][j]) * feature_failure_cost[c.type][j];    // CF
+	    CR == sum( n in nfnode ) used[n] * node_using_cost[n];    // CR
+	    CI == sum( i in cnode, v in vnf_feature ) instance_count[i][v] * init_cost;    // CI
+	    CU == sum( l in path, r in req ) flow_update[r][l] * update_msg_cost;    // CU	
+	}
 }	
 
 //execute {
@@ -234,6 +246,6 @@ subject to {
 //	}	
 //}
 
-//execute PARAMS { cplex.tilim = 100; }
+execute PARAMS { cplex.tilim = 100; }
 
 
