@@ -5,7 +5,7 @@ range cnode = 42..45;
 range pnode = 41..41;
 range chain_type = 1..5;
 
-float multiplier = 1;
+float multiplier = 1.0;
 float update_msg_cost = 0.2;
 float init_cost = 0.4;
 
@@ -62,8 +62,9 @@ tuple REQ {
 	string r1;
 	string r2;
 }
-{REQ} req = { <c.src, c.sink, c.type, c.demand, p, q> | c in cfc, p, q in phy_feature };
+{REQ} new_req = { <c.src, c.sink, c.type, c.demand, p, q> | c in new_cfc, p, q in phy_feature };
 {REQ} former_req = { <c.src, c.sink, c.type, c.demand, p, q> | c in former_cfc, p, q in phy_feature };
+{REQ} req = new_req union former_req;    // 取并集
 
 int former_flow[former_req][path] = ...;
 
@@ -78,11 +79,13 @@ dvar int flow_active[cfc][phy_feature][phy_feature] in 0..1;
 //dvar float rs_demand[cfc][nf_feature] in 0..infinity;
 //dvar float net_demand[cfc][phy_feature][phy_feature] in 0..infinity;
 dvar int flow_update[req][path] in 0..1;
+dvar float BWleft[allnode][allnode] in 0..infinity;
 
 dvar float CR;
 dvar float CI;
 dvar float CF;
-dvar float CU;
+dvar float CUformer;
+dvar float CUnew;
 
 constraint feature;
 constraint type2;
@@ -104,7 +107,7 @@ constraint update;
 
 constraint cost;
 
-minimize CF + CR + CU;
+minimize CF + CR + CI + CUformer + CUnew;
 
 subject to {
 	feature = forall( i in cfc ) {
@@ -153,7 +156,7 @@ subject to {
 	demand_of_rps = {	
 		forall( i in cnode, v in vnf_feature ) {
 			instance_count[i][v] * rps[v] >= sum( c in cfc ) allocate[c][v][i] * c.demand * multiplier;
-//			(instance_count[i][v] - 1) * rps[v] <= sum( c in cfc ) allocate[c][v][i] * prop[v] * c.demand * multiplier;
+			(instance_count[i][v] - 1) * rps[v] <= (sum( c in cfc ) allocate[c][v][i] * c.demand * multiplier) - 0.1;
 		}
 		forall( i in pnode ) {
 			pnode_Capacity[i] >= sum( c in cfc, p in pnf_feature ) allocate[c][p][i] * c.demand * multiplier;
@@ -197,11 +200,13 @@ subject to {
 		}
 	}
 	demand_of_network = {
-		forall( <m, n> in path : m in cnode || n in cnode ) {
-			sum( c in cfc, p, q in phy_feature ) flow[<c.src, c.sink, c.type, c.demand, p, q>][<m, n>] * prop[p] * c.demand <= n_r;
+		forall( <m, n> in path : m in nfnode || n in nfnode ) {
+			BWleft[m][n] == n_r - sum( c in cfc, p, q in phy_feature ) flow[<c.src, c.sink, c.type, c.demand, p, q>][<m, n>] * prop[p] * c.demand * multiplier;
+			BWleft[m][n] >= 0;
 		}
 		forall( <m, n> in path : m in commonnode && n in commonnode ) {
-			sum( c in cfc, p, q in phy_feature ) flow[<c.src, c.sink, c.type, c.demand, p, q>][<m, n>] * prop[p] * c.demand <= r_r;
+			BWleft[m][n] == r_r - sum( c in cfc, p, q in phy_feature ) flow[<c.src, c.sink, c.type, c.demand, p, q>][<m, n>] * prop[p] * c.demand * multiplier;
+			BWleft[m][n] >= 0;
 		}
 	}
 //	network = {
@@ -214,9 +219,9 @@ subject to {
 //	}		
 	update = {
 		forall( r in former_req, l in path ) {
-			flow_update[r][l] == flow[r][l] * (1 - former_flow[r][l]);
+			flow_update[r][l] == flow[r][l] * (1 - former_flow[r][l]);    // 旧链只计算切换到的新路径的开销
 		}
-		forall( r in req, l in path : <r.src, r.sink, r.type, r.demand> in new_cfc ) {
+		forall( r in req, l in path : <r.src, r.sink, r.type, r.demand> in new_cfc ) {    // 新路径都要计算更新开销
 			flow_update[r][l] == flow[r][l];
 		}
 	}	
@@ -224,7 +229,8 @@ subject to {
 		CF == sum( c in cfc, j in Feature_Model ) (1 - f_choice[c][j]) * feature_failure_cost[c.type][j];    // CF
 	    CR == sum( n in nfnode ) used[n] * node_using_cost[n];    // CR
 	    CI == sum( i in cnode, v in vnf_feature ) instance_count[i][v] * init_cost;    // CI
-	    CU == sum( l in path, r in req ) flow_update[r][l] * update_msg_cost;    // CU	
+	    CUformer == sum( l in path, r in former_req ) flow_update[r][l] * update_msg_cost;
+	    CUnew == sum( l in path, r in new_req ) flow_update[r][l] * update_msg_cost;    // CU	
 	}
 }	
 
@@ -246,6 +252,6 @@ subject to {
 //	}	
 //}
 
-execute PARAMS { cplex.tilim = 100; }
+//execute PARAMS { cplex.tilim = 1000; }
 
 
