@@ -5,7 +5,7 @@ range cnode = 42..45;
 range pnode = 41..41;
 range chain_type = 1..5;
 
-float multiplier = 1.0;
+float multiplier = 1.25;
 float update_msg_cost = 0.2;
 float init_cost = 0.4;
 
@@ -31,12 +31,12 @@ float rps[vnf_feature] = ...;
 float prop[phy_feature] = ...;
 float f_net_influence[impact_feature][phy_feature][phy_feature] = ...;
 
-int hoplimit = 18;
+int hoplimit = 8;
 //h_s = 10000;
 //s_r = 10000;
 //s_e = 10000;
-float r_r = 8000;
-float n_r = 16000;
+float r_r = 4000;
+float n_r = 8000;
 
 tuple CFC {
 	int src;
